@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"firstmod/internal/models"
 	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -30,4 +31,16 @@ func New(log *slog.Logger, address string) (*DB, error) {
 		log:  log,
 		conn: pool,
 	}, nil
+}
+
+func (db *DB) Add(ctx context.Context, order models.Order) error {
+	return nil
+}
+
+func (db *DB) GetInfo(ctx context.Context, orderID int) (models.Order, error) {
+	return models.Order{}, nil
+}
+
+func (db *DB) Delete(ctx context.Context, orderID int) error {
+	return nil
 }
