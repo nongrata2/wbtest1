@@ -14,7 +14,7 @@ type Storage interface {
 	Add(context.Context, models.Order) error
 	GetInfo(context.Context, string) (models.Order, error)
 	GetIDs(context.Context) ([]string, error)
-	Delete(context.Context, int) error
+	Delete(context.Context, string) error
 }
 
 func GetOrderByIDHandler(log *slog.Logger, storage Storage) http.HandlerFunc {
@@ -81,7 +81,46 @@ func CreateOrderHandler(log *slog.Logger, storage Storage) http.HandlerFunc {
 
 func DeleteOrderHandler(log *slog.Logger, storage Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			log.Warn("received non-DELETE request for order deletion", "method", r.Method)
+			http.Error(w, "Only DELETE method is allowed", http.StatusMethodNotAllowed)
+			return
+		}
 
+		orderUID := r.PathValue("orderID")
+		if orderUID == "" {
+			log.Error("orderUID is missing in URL path for deletion")
+			http.Error(w, "Order ID is missing", http.StatusBadRequest)
+			return
+		}
+		log.Debug("received request to delete order", "order_uid", orderUID)
+
+		err := storage.Delete(r.Context(), orderUID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) { // Если заказ не найден для удаления
+				log.Info("attempted to delete non-existent order", "order_uid", orderUID)
+				http.Error(w, "Order not found", http.StatusNotFound)
+				return
+			}
+			log.Error("failed to delete order from storage", "order_uid", orderUID, "error", err)
+			http.Error(w, "Failed to delete order", http.StatusInternalServerError)
+			return
+		}
+
+		log.Info("order deleted successfully", "order_uid", orderUID)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK) // Или http.StatusNoContent, но OK с сообщением более информативно
+		// Можно отправить пустое тело или сообщение об успехе
+		responseMap := map[string]string{"message": "Order deleted successfully", "order_uid": orderUID}
+		responseJSON, err := json.MarshalIndent(responseMap, "", "    ")
+		if err != nil {
+			log.Error("failed to marshal delete success response", "order_uid", orderUID, "error", err)
+			// Здесь уже не можем отправить HTTP-ошибку
+		}
+		_, err = w.Write(responseJSON)
+		if err != nil {
+			log.Error("failed to write delete response", "order_uid", orderUID, "error", err)
+		}
 	}
 }
 

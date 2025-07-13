@@ -308,7 +308,21 @@ func (db *DB) GetInfo(ctx context.Context, orderUID string) (models.Order, error
 	return order, nil
 }
 
-func (db *DB) Delete(ctx context.Context, orderID int) error {
+func (db *DB) Delete(ctx context.Context, orderUID string) error {
+	db.log.Debug("attempting to delete order", "order_uid", orderUID)
+
+	cmdTag, err := db.conn.Exec(ctx, "DELETE FROM orders WHERE order_uid = $1", orderUID)
+	if err != nil {
+		db.log.Error("failed to delete order", "order_uid", orderUID, "error", err)
+		return err
+	}
+
+	if cmdTag.RowsAffected() == 0 {
+		db.log.Warn("attempted to delete non-existent order", "order_uid", orderUID)
+		return sql.ErrNoRows
+	}
+
+	db.log.Info("order and related data deleted successfully", "order_uid", orderUID)
 	return nil
 }
 
