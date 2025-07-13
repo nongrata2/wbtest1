@@ -1,4 +1,4 @@
-FROM golang:1.23 AS build
+FROM golang:1.24 AS build
 
 WORKDIR /src
 
@@ -7,6 +7,7 @@ RUN go mod download
 
 COPY cmd ./cmd
 COPY internal ./internal
+COPY migrations ./migrations
 
 RUN CGO_ENABLED=0 go build -o /app ./cmd/app/main.go
 
