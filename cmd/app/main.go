@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"firstmod/internal/cache"
 	"firstmod/internal/config"
 	"firstmod/internal/handlers"
 	"firstmod/internal/repository"
+	"firstmod/internal/service"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -44,6 +46,21 @@ func main() {
 	}
 
 	log.Info("successfully connected to database")
+
+	orderCache := cache.NewCache(log) // Создаем конкретную реализацию кэша
+	log.Info("in-memory cache initialized")
+
+	orderService := service.NewOrderService(storage, orderCache, log)
+	log.Info("order service initialized")
+
+	loadCtx, cancelLoad := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelLoad()
+
+	if err := orderService.LoadCacheFromDB(loadCtx); err != nil {
+		log.Error("failed to load cache from database", "error", err)
+	} else {
+		log.Info("cache successfully loaded from database")
+	}
 
 	mux := http.NewServeMux()
 

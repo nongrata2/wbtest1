@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"firstmod/internal/models"
+	"firstmod/internal/ports"
 	"log/slog"
 	"sync"
 )
@@ -13,12 +14,7 @@ type Cache struct {
 	log  *slog.Logger
 }
 
-type Storage interface {
-	GetInfo(context.Context, string) (models.Order, error)
-	GetIDs(context.Context) ([]string, error)
-}
-
-func (c *Cache) NewCache(log *slog.Logger) *Cache {
+func NewCache(log *slog.Logger) *Cache {
 	return &Cache{
 		data: make(map[string]models.Order),
 		log:  log,
@@ -51,7 +47,18 @@ func (c *Cache) Delete(orderUID string) {
 	c.log.Debug("order was removed from cache", "orderUID", orderUID)
 }
 
-func (c *Cache) LoadFromDB(ctx context.Context, db Storage) error {
+func (c *Cache) GetAllUIDs() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	uids := make([]string, 0, len(c.data))
+	for uid := range c.data {
+		uids = append(uids, uid)
+	}
+	c.log.Debug("retrieved all UIDs from cache", "count", len(uids))
+	return uids
+}
+
+func (c *Cache) LoadToCacheFromDB(ctx context.Context, db ports.Repository) error {
 	uids, err := db.GetIDs(ctx)
 	if err != nil {
 		c.log.Error("Error getting IDs from DB", "error", err)
