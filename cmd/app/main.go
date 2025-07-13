@@ -47,7 +47,7 @@ func main() {
 
 	log.Info("successfully connected to database")
 
-	orderCache := cache.NewCache(log) // Создаем конкретную реализацию кэша
+	orderCache := cache.NewCache(log)
 	log.Info("in-memory cache initialized")
 
 	orderService := service.NewOrderService(storage, orderCache, log)

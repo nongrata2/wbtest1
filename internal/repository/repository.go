@@ -38,25 +38,22 @@ func New(log *slog.Logger, address string) (*DB, error) {
 func (db *DB) Add(ctx context.Context, order models.Order) error {
 	db.log.Debug("attempting to add new order", "order_uid", order.OrderUID)
 
-	// Начинаем транзакцию
 	tx, err := db.conn.Begin(ctx)
 	if err != nil {
 		db.log.Error("failed to begin transaction", "error", err)
 		return err
 	}
-	// Откатываем транзакцию в случае ошибки, если она еще не была закоммичена
 	defer func() {
 		if r := recover(); r != nil {
 			db.log.Error("recovered from panic during transaction, rolling back", "panic", r)
 			tx.Rollback(ctx)
-			panic(r) // Re-throw panic
+			panic(r)
 		} else if err != nil {
 			db.log.Error("transaction failed, rolling back", "error", err)
 			tx.Rollback(ctx)
 		}
 	}()
 
-	// 1. Вставка данных в таблицу orders
 	orderSQL := `
         INSERT INTO orders (
             order_uid, track_number, entry, locale, internal_signature,
@@ -83,7 +80,6 @@ func (db *DB) Add(ctx context.Context, order models.Order) error {
 	}
 	db.log.Debug("order inserted successfully", "order_uid", order.OrderUID)
 
-	// 2. Вставка данных в таблицу delivery_info
 	deliverySQL := `
         INSERT INTO delivery_info (
             order_uid, name, phone, zip, city, address, region, email
@@ -91,7 +87,7 @@ func (db *DB) Add(ctx context.Context, order models.Order) error {
             $1, $2, $3, $4, $5, $6, $7, $8
         )`
 	_, err = tx.Exec(ctx, deliverySQL,
-		order.OrderUID, // Связываем по OrderUID
+		order.OrderUID,
 		order.DeliveryInfo.Name,
 		order.DeliveryInfo.Phone,
 		order.DeliveryInfo.Zip,
@@ -106,7 +102,6 @@ func (db *DB) Add(ctx context.Context, order models.Order) error {
 	}
 	db.log.Debug("delivery info inserted successfully", "order_uid", order.OrderUID)
 
-	// 3. Вставка данных в таблицу payments
 	paymentSQL := `
         INSERT INTO payments (
             transaction_uid, request_id, currency, provider, amount,
@@ -132,7 +127,6 @@ func (db *DB) Add(ctx context.Context, order models.Order) error {
 	}
 	db.log.Debug("payment info inserted successfully", "order_uid", order.OrderUID)
 
-	// 4. Вставка данных в таблицу items (может быть несколько)
 	itemSQL := `
         INSERT INTO items (
             order_uid, chrt_id, track_number, price, rid, name,
@@ -142,7 +136,7 @@ func (db *DB) Add(ctx context.Context, order models.Order) error {
         )`
 	for i, item := range order.Items {
 		_, err = tx.Exec(ctx, itemSQL,
-			order.OrderUID, // Связываем по OrderUID
+			order.OrderUID,
 			item.ChrtID,
 			item.TrackNumber,
 			item.Price,
@@ -162,7 +156,6 @@ func (db *DB) Add(ctx context.Context, order models.Order) error {
 	}
 	db.log.Debug("items inserted successfully", "order_uid", order.OrderUID, "count", len(order.Items))
 
-	// Коммитим транзакцию
 	err = tx.Commit(ctx)
 	if err != nil {
 		db.log.Error("failed to commit transaction", "error", err)
@@ -173,14 +166,12 @@ func (db *DB) Add(ctx context.Context, order models.Order) error {
 	return nil
 }
 
-// GetInfo получает полную информацию о заказе по его OrderUID.
 func (db *DB) GetInfo(ctx context.Context, orderUID string) (models.Order, error) {
 	db.log.Debug("attempting to get order info", "order_uid", orderUID)
 
 	var order models.Order
-	order.OrderUID = orderUID // Устанавливаем OrderUID сразу
+	order.OrderUID = orderUID
 
-	// 1. Получаем данные из таблицы orders
 	orderSQL := `
         SELECT
             track_number, entry, locale, internal_signature,
@@ -201,16 +192,15 @@ func (db *DB) GetInfo(ctx context.Context, orderUID string) (models.Order, error
 		&order.OofShard,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows { // Или sql.ErrNoRows, в зависимости от того, что возвращает pgx.QueryRow
+		if err == pgx.ErrNoRows {
 			db.log.Debug("order not found", "order_uid", orderUID)
-			return models.Order{}, sql.ErrNoRows // Возвращаем ошибку, если заказ не найден
+			return models.Order{}, sql.ErrNoRows
 		}
 		db.log.Error("failed to query order", "order_uid", orderUID, "error", err)
 		return models.Order{}, err
 	}
 	db.log.Debug("order data fetched successfully", "order_uid", orderUID)
 
-	// 2. Получаем данные из таблицы delivery_info
 	deliverySQL := `
         SELECT
             name, phone, zip, city, address, region, email
@@ -227,20 +217,16 @@ func (db *DB) GetInfo(ctx context.Context, orderUID string) (models.Order, error
 	)
 	if err != nil {
 		db.log.Warn("failed to query delivery info, might not exist", "order_uid", orderUID, "error", err)
-		// Не возвращаем ошибку, если info нет - возможно, это допустимо.
-		// Но в данном случае, если order есть, delivery_info по FK должен быть.
-		// Если это критично, можете вернуть err
 	}
 	db.log.Debug("delivery info fetched successfully", "order_uid", orderUID)
 
-	// 3. Получаем данные из таблицы payments
 	paymentSQL := `
         SELECT
             request_id, currency, provider, amount,
             payment_dt, bank, delivery_cost, goods_total, custom_fee
         FROM payments
-        WHERE transaction_uid = $1` // Используем transaction_uid для поиска
-	err = db.conn.QueryRow(ctx, paymentSQL, orderUID).Scan( // orderUID должен быть равен transaction_uid
+        WHERE transaction_uid = $1`
+	err = db.conn.QueryRow(ctx, paymentSQL, orderUID).Scan(
 		&order.Payment.RequestID,
 		&order.Payment.Currency,
 		&order.Payment.Provider,
@@ -253,13 +239,10 @@ func (db *DB) GetInfo(ctx context.Context, orderUID string) (models.Order, error
 	)
 	if err != nil {
 		db.log.Warn("failed to query payment info, might not exist", "order_uid", orderUID, "error", err)
-		// Аналогично delivery_info
 	}
-	// Устанавливаем Transaction, так как он не выбирается из БД
 	order.Payment.Transaction = orderUID
 	db.log.Debug("payment info fetched successfully", "order_uid", orderUID)
 
-	// 4. Получаем данные из таблицы items (может быть несколько)
 	itemSQL := `
         SELECT
             chrt_id, track_number, price, rid, name,
@@ -293,8 +276,6 @@ func (db *DB) GetInfo(ctx context.Context, orderUID string) (models.Order, error
 			db.log.Error("failed to scan item row", "order_uid", orderUID, "error", err)
 			return models.Order{}, err
 		}
-		// Устанавливаем TrackNumber (если он не возвращается из БД, но нужен в Item)
-		// item.TrackNumber = order.TrackNumber // Если TrackNumber в Item всегда тот же, что и в Order
 		items = append(items, item)
 	}
 	if err = rows.Err(); err != nil {
