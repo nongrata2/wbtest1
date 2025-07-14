@@ -6,6 +6,7 @@ import (
 	"firstmod/internal/cache"
 	"firstmod/internal/config"
 	"firstmod/internal/handlers"
+	"firstmod/internal/kafka"
 	"firstmod/internal/repository"
 	"firstmod/internal/service"
 	"flag"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 )
 
@@ -50,7 +52,12 @@ func main() {
 	orderCache := cache.NewCache(log)
 	log.Info("in-memory cache initialized")
 
-	orderService := service.NewOrderService(storage, orderCache, log)
+	kafkaBrokers := strings.Split(cfg.KafkaBrokers, ",")
+	kafkaProducer := kafka.NewProducer(log, kafkaBrokers, cfg.KafkaTopic)
+	defer kafkaProducer.Close()
+	log.Info("Kafka producer initialized")
+
+	orderService := service.NewOrderService(storage, orderCache, log, kafkaProducer)
 	log.Info("order service initialized")
 
 	loadCtx, cancelLoad := context.WithTimeout(context.Background(), 30*time.Second)
@@ -68,6 +75,9 @@ func main() {
 	mux.Handle("DELETE /order/{orderID}", handlers.DeleteOrderHandler(log, storage))
 	mux.Handle("GET /order/{orderID}", handlers.GetOrderByIDHandler(log, storage))
 	mux.Handle("GET /orders/", handlers.GetOrdersIDsHandler(log, storage))
+
+	fileServer := http.FileServer(http.Dir("./static"))
+	mux.Handle("/", fileServer)
 
 	server := http.Server{
 		Addr:        cfg.HttpServerAddress,

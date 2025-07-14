@@ -20,6 +20,11 @@ type CacheRepository interface {
 	LoadToCacheFromDB(ctx context.Context, db Repository) error
 }
 
+type KafkaProducer interface {
+	Publish(ctx context.Context, key string, value []byte) error
+	Close() error
+}
+
 type OrderService interface {
 	Add(context.Context, models.Order) error
 	GetOrder(context.Context, string) (models.Order, error)

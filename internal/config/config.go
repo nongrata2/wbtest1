@@ -17,6 +17,9 @@ type Config struct {
 	DBPassword        string        `env:"POSTGRES_PASSWORD" env-default:"postgres"`
 	DBName            string        `env:"POSTGRES_NAME" env-default:"postgres"`
 	DBPort            string        `env:"POSTGRES_PORT" env-default:"5432"`
+	KafkaBrokers      string        `env:"KAFKA_BROKERS" env-required:"true"`
+	KafkaTopic        string        `env:"KAFKA_TOPIC" env-required:"true"`
+	KafkaGroupID      string        `env:"KAFKA_GROUP_ID" env-required:"true"`
 }
 
 func MustLoadCfg(configPath string) Config {
